@@ -69,17 +69,24 @@ export function WorldWeatherMap({
   );
 
   useEffect(() => {
-    const controls = globeInstance?.controls();
+    if (!globeInstance) return;
 
-    if (!controls) return;
-
-    controls.autoRotate = true;
-    controls.autoRotateSpeed = 0.45;
-    controls.enablePan = false;
-    controls.minDistance = 125;
-    controls.maxDistance = 300;
-    controls.dampingFactor = 0.08;
-    globeInstance.pointOfView({ altitude: zoom }, 450);
+    try {
+      const controls = typeof globeInstance.controls === "function" ? globeInstance.controls() : null;
+      if (controls) {
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 0.45;
+        controls.enablePan = false;
+        controls.minDistance = 125;
+        controls.maxDistance = 300;
+        controls.dampingFactor = 0.08;
+      }
+      if (typeof globeInstance.pointOfView === "function") {
+        globeInstance.pointOfView({ altitude: zoom }, 450);
+      }
+    } catch {
+      // Ignore controls initialization if WebGL context is not fully ready
+    }
   }, [globeInstance, zoom]);
 
   function selectNearestCity(lat: number, lng: number) {

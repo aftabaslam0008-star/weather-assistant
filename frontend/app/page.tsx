@@ -14,27 +14,20 @@ import {
   Bell,
   Bot,
   CalendarDays,
-  CheckCircle,
   ChevronDown,
   CloudSun,
   Compass,
   Droplets,
-  Eye,
   Gauge,
-  Globe as GlobeIcon,
   Home,
-  Info,
   LocateFixed,
   LogOut,
   Map,
   Menu,
-  Moon,
   Navigation,
-  RefreshCw,
   Search,
   Settings,
   ShieldCheck,
-  Sparkles,
   Sun,
   Sunset,
   User,
@@ -48,7 +41,10 @@ import { WorldWeatherMap } from "@/components/WorldWeatherMap";
 type HourlyWeather = {
   time: string;
   temp: number;
+  feels_like?: number;
   condition: string;
+  description?: string;
+  rain_chance?: number;
 };
 
 type DailyWeather = {
@@ -57,8 +53,8 @@ type DailyWeather = {
   high: number;
   low: number;
   condition: string;
-  description: string;
-  rain_chance: number;
+  description?: string;
+  rain_chance?: number;
 };
 
 type WeatherData = {
@@ -71,6 +67,10 @@ type WeatherData = {
   pressure: number;
   wind_speed: number;
   visibility: number;
+  cloudiness?: number;
+  sunrise?: number;
+  sunset?: number;
+  timezone?: number;
   daily: DailyWeather[];
   hourly: HourlyWeather[];
 };
@@ -100,10 +100,13 @@ const defaultDays = [
   { d: "Tuesday", date: "25 Aug", hi: 29, lo: 22, k: "rain", rainChance: 55, wind: 16.0, humidity: 80 },
 ];
 
-function formatHour(value: string, index: number) {
+function formatHour(value: string | undefined | null, index: number): string {
   if (index === 0) return "Now";
-  const parsedDate = new Date(value.replace(" ", "T"));
-  if (Number.isNaN(parsedDate.getTime())) return value;
+  if (!value) return "";
+  const str = String(value);
+  const formatted = str.includes(" ") ? str.replace(" ", "T") : str;
+  const parsedDate = new Date(formatted);
+  if (Number.isNaN(parsedDate.getTime())) return str;
   return parsedDate.toLocaleTimeString([], { hour: "numeric" });
 }
 
@@ -130,23 +133,33 @@ export default function Dashboard() {
   const [weatherLoading, setWeatherLoading] = useState(true);
   const [weatherError, setWeatherError] = useState("");
 
+  // Hydration safe formatted date
+  const [formattedDate, setFormattedDate] = useState("Today");
+
+  useEffect(() => {
+    try {
+      setFormattedDate(
+        new Intl.DateTimeFormat("en", {
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+        }).format(new Date()),
+      );
+    } catch {
+      setFormattedDate(new Date().toDateString());
+    }
+  }, []);
+
   // Convert temperature based on selected unit
-  const formatTemp = (celsius: number) => {
+  const formatTemp = (celsius?: number | null) => {
+    if (celsius === undefined || celsius === null || Number.isNaN(celsius)) {
+      return 0;
+    }
     if (unit === "F") {
       return Math.round((celsius * 9) / 5 + 32);
     }
     return Math.round(celsius);
   };
-
-  const date = useMemo(
-    () =>
-      new Intl.DateTimeFormat("en", {
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-      }).format(new Date()),
-    [],
-  );
 
   useEffect(() => {
     let cancelled = false;
@@ -181,19 +194,19 @@ export default function Dashboard() {
 
   const chartData: ChartWeather[] = useMemo(() => {
     if (!weather?.hourly?.length) {
-      return defaultHourly.map(item => ({ ...item, v: formatTemp(item.v) }));
+      return defaultHourly.map((item) => ({ ...item, v: formatTemp(item.v) }));
     }
 
     return weather.hourly.map((item, index) => ({
       t: formatHour(item.time, index),
       v: formatTemp(item.temp),
-      condition: item.condition,
+      condition: item.condition || "Clear",
     }));
   }, [weather, unit]);
 
   const forecastDays = useMemo(() => {
     if (!weather?.daily?.length) {
-      return defaultDays.map(d => ({
+      return defaultDays.map((d) => ({
         ...d,
         hi: formatTemp(d.hi),
         lo: formatTemp(d.lo),
@@ -205,10 +218,10 @@ export default function Dashboard() {
       date: day.date,
       hi: formatTemp(day.high),
       lo: formatTemp(day.low),
-      k: day.condition.toLowerCase(),
-      rainChance: day.rain_chance,
-      wind: weather.wind_speed,
-      humidity: weather.humidity,
+      k: (day.condition || "sunny").toLowerCase(),
+      rainChance: day.rain_chance ?? 0,
+      wind: weather.wind_speed ?? 0,
+      humidity: weather.humidity ?? 0,
     }));
   }, [weather, unit]);
 
@@ -395,7 +408,7 @@ export default function Dashboard() {
         <div className="content">
           <div className="greeting">
             <div>
-              <p>{date}</p>
+              <p>{formattedDate}</p>
               <h1>Good afternoon, Alex.</h1>
               <span>Here’s what the sky has planned for you.</span>
             </div>
@@ -513,7 +526,7 @@ export default function Dashboard() {
                           tick={{ fill: "#8d95aa", fontSize: 11 }}
                         />
                         <Tooltip
-                          formatter={(value) => [`${value}°${unit}`, "Temperature"]}
+                          formatter={(value: any) => [`${value}°${unit}`, "Temperature"]}
                           contentStyle={{
                             border: 0,
                             borderRadius: 12,
@@ -538,9 +551,9 @@ export default function Dashboard() {
                   </div>
 
                   <div className="mini-hours">
-                    {chartData.slice(0, 5).map((hour) => (
-                      <span key={`${hour.t}-${hour.v}`}>
-                        <WeatherIcon kind={hour.condition.toLowerCase()} />
+                    {chartData.slice(0, 5).map((hour, idx) => (
+                      <span key={`${hour.t}-${idx}`}>
+                        <WeatherIcon kind={hour.condition?.toLowerCase() || "sunny"} />
                         <b>{hour.v}°</b>
                       </span>
                     ))}
@@ -617,8 +630,8 @@ export default function Dashboard() {
                   </div>
 
                   <div className="days">
-                    {forecastDays.map((day) => (
-                      <div key={`${day.d}-${day.date}`}>
+                    {forecastDays.map((day, idx) => (
+                      <div key={`${day.d}-${day.date}-${idx}`}>
                         <span>
                           <strong>{day.d}</strong>
                           <small>{day.date}</small>
@@ -658,7 +671,7 @@ export default function Dashboard() {
 
                 <div className="forecast-hero-grid" style={{ marginTop: "20px" }}>
                   {forecastDays.map((day, idx) => (
-                    <div className="forecast-day-card" key={idx}>
+                    <div className="forecast-day-card" key={`forecast-card-${day.d}-${idx}`}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <div>
                           <strong style={{ fontSize: "16px" }}>{day.d}</strong>
@@ -817,6 +830,9 @@ export default function Dashboard() {
                     onChange={(e) => setCity(e.target.value)}
                     style={{ border: "1px solid var(--line)", padding: "8px 12px", borderRadius: "10px", fontSize: "13px" }}
                   >
+                    {!["Islamabad", "London", "New York", "Tokyo", "Dubai"].includes(city) && (
+                      <option value={city}>{city}</option>
+                    )}
                     <option value="Islamabad">Islamabad, PK</option>
                     <option value="London">London, UK</option>
                     <option value="New York">New York, US</option>
